@@ -1,0 +1,7 @@
+# Python
+*.pyc
+
+#
+3rdparty/build
+3rdparty/build.tmp
+

@@ -100,6 +100,8 @@ public:
             }
             if (wait)
                 pthread_cond_wait(&q_condv_, &q_mutex_);
+            else
+                break;
         }
 
         return MsgQResEmpty;
@@ -122,6 +124,8 @@ public:
             }
             if (wait)
                 pthread_cond_wait(&q_condv_, &q_mutex_);
+            else
+                break;
         }
 
         return MsgQResEmpty;

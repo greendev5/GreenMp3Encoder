@@ -68,15 +68,26 @@ void WorkerThread::exec()
         r = taskQueue_.recv(currentTask_, true);
 
         if (r == MsgQResSuccess) {
-            // Notify main thread that we started encoding.
             EncodingNotification ntf;
+
+            // Notify main thread that we started encoding:
             ntf.task = currentTask_;
             ntf.type = EncodingNotification::EncodingStarted;
             ntf.result = EncodingTask::EncodingSuccess;
             resultQueue_.send(ntf);
 
+            // Using this pointer to check when we must interrupt
             currentTask_->setExecutor(this);
-            currentTask_->encode();
+
+            // Do encoding:
+            EncodingTask::EncodingResult r = currentTask_->encode();
+
+            // Nonify main thread that incoding was completed:
+            ntf.task = currentTask_;
+            ntf.type = EncodingNotification::EncodingFinished;
+            ntf.result = r;
+            resultQueue_.send(ntf);
+
         }
 
     } while (r != MsgQResInvalid);

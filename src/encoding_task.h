@@ -2,8 +2,13 @@
 #define GMP3ENC_ENCODING_TASK_
 
 #include <string>
-
 #include <stdio.h>
+
+#include "riff_wave.h"
+
+struct lame_global_struct;
+typedef struct lame_global_struct lame_global_flags;
+typedef lame_global_flags *lame_t;
 
 namespace GMp3Enc {
 
@@ -16,13 +21,14 @@ public:
     {
         EncodingSuccess,
         EncodingBadSource,
+        EncodingBadDestination,
         EncodingSystemError
     };
 
     ~EncodingTask();
 
     static EncodingTask* create(
-            const std::string &wavSource,
+            const RiffWave &wave,
             const std::string &mp3Destination,
             size_t taskId);
 
@@ -31,13 +37,29 @@ public:
     void setExecutor(WorkerThread *executor);
 
     inline size_t taskId() const { return taskId_; }
+    inline std::string errorStr() const { return errorStr_; }
+
+    std::string sourceFilePath() const;
 
 private:
-    EncodingTask();
+    static const int PCM_SIZE = 8192;
+    static const int MP3_SIZE = 8192;
+
+    EncodingTask(
+            const RiffWave &wave,
+            const std::string &mp3Destination,
+            size_t taskId);
     EncodingTask(const EncodingTask&) {}
     EncodingTask& operator=(const EncodingTask&) {}
+    bool initLame();
+    std::string lameErrorCodeToStr(int r);
 
+    RiffWave wave_;
+    std::string sourceFilePath_;
+    std::string mp3Destination_;
     size_t taskId_;
+    lame_t lame_;
+    std::string errorStr_;
     WorkerThread *executor_;
 };
 
