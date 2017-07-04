@@ -166,7 +166,7 @@ bool EncodingTask::initLame()
         lame_set_num_channels(lame_, wave_.channelsNumber());
     }
     lame_set_VBR(lame_, vbr_default);
-    lame_set_quality(lame_, 2); // hight quality
+    lame_set_quality(lame_, 2); // high quality
 
     if (lame_init_params(lame_) < 0) {
         errorStr_ = "Fatal error during lame initialization.";

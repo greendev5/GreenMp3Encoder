@@ -25,6 +25,8 @@ private:
     void showUsage();
     std::string getCmdOptName(const std::string &os);
     int parseCmdOpt(bool &needLoop);
+    void listDirectory(std::string &dir, std::list<std::string> &wavFiles);
+    std::string generateOutFileName(std::string &inFileName);
 
     std::list<std::string> cmdOpts_;
     std::string inf_;

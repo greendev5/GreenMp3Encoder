@@ -2,8 +2,11 @@
 
 #include <sys/signalfd.h>
 #include <sys/epoll.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
+#include <dirent.h>
 #include <error.h>
 #include <errno.h>
 #include <string.h>
@@ -213,11 +216,26 @@ bool EncoderApp::executeTasks()
             threadPool_->executeAsyncTask(task);
             tasks_.push_back(task);
         } else {
-            GMP3ENC_LOGGER_INFO("Could not open %s", inf_.c_str());
+            GMP3ENC_LOGGER_INFO("Not a valid riff wave file: %s", inf_.c_str());
         }
 
     } else {
-        return false;
+        std::list<std::string> wavFiles;
+        std::list<std::string>::iterator it;
+
+        listDirectory(inf_, wavFiles);
+
+        for (it = wavFiles.begin(); it != wavFiles.end(); ++it) {
+            RiffWave wave(*it);
+            if (wave.isValid()) {
+                std::string outFileName = generateOutFileName(*it);
+                EncodingTask *task = EncodingTask::create(wave, outFileName, 0);
+                threadPool_->executeAsyncTask(task);
+                tasks_.push_back(task);
+            } else {
+                GMP3ENC_LOGGER_INFO("Not a valid riff wave file: %s", (*it).c_str());
+            }
+        }
     }
 
     return !tasks_.empty();
@@ -296,4 +314,51 @@ int EncoderApp::parseCmdOpt(bool &needLoop)
 
     needLoop = true;
     return 0;
+}
+
+void EncoderApp::listDirectory(std::string &dir, std::list<std::string> &wavFiles)
+{
+    struct stat statbuf;
+    std::string sep = dir[dir.length() - 1] == '/' ? "" : "/";
+    DIR *dp = opendir(dir.c_str());
+    if (!dp) {
+        GMP3ENC_LOGGER_ERROR("Could not open dir: %s", dir.c_str());
+        return;
+    }
+    dirent *dirp;
+    while ((dirp = readdir(dp)) != NULL) {
+        if (strcmp(dirp->d_name, ".") == 0 ||
+            strcmp(dirp->d_name, "..") == 0)
+            continue;
+
+        std::string item = dir + sep + std::string(dirp->d_name);
+        if (lstat(item.c_str(), &statbuf) < 0) {
+            GMP3ENC_LOGGER_ERROR("Could not lstat file: %s", item.c_str());
+            continue;
+        }
+
+        if (S_ISDIR(statbuf.st_mode))
+            continue;
+
+        std::size_t pos = item.find(".wav");
+        if (pos != (item.length() - 4))
+            continue;
+
+        wavFiles.push_back(item);
+    }
+}
+
+std::string EncoderApp::generateOutFileName(std::string &inFileName)
+{
+    std::string sep = outf_[outf_.length() - 1] == '/' ? "" : "/";
+    std::size_t pos = inFileName.rfind("/");
+    if (pos == std::string::npos)
+        pos = 0;
+    if (inFileName[pos] == '/')
+        pos++;
+    std::string ret = outf_ + sep + inFileName.substr(pos);
+    ret[ret.length() - 3] = 'm';
+    ret[ret.length() - 2] = 'p';
+    ret[ret.length() - 1] = '3';
+    return ret;
 }
