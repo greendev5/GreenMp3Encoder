@@ -1,11 +1,10 @@
 #include "encoding_task.h"
 
+#include <string.h>
 #include <vector>
 #include <lame/lame.h>
 
-#ifndef _WIN32
 #include "worker_thread.h"
-#endif
 
 using namespace GMp3Enc;
 
@@ -40,9 +39,10 @@ EncodingTask* EncodingTask::create(
 EncodingTask::EncodingResult EncodingTask::encode()
 {
     EncodingResult r = EncodingSuccess;
-    int k = (wave_.channelsNumber() == 1) ? 1 : 2;
-    size_t size = PCM_SIZE * k * sizeof(short int);
-    std::vector<uint8_t> pcmBuffer;
+
+    std::vector<int32_t> pcmBuffer;
+    std::vector<int32_t> pcmBufferLeft;
+    std::vector<int32_t> pcmBufferRight;
     std::vector<uint8_t> mp3Buffer;
 
     FILE *outf = fopen(mp3Destination_.c_str(), "wb");
@@ -56,18 +56,31 @@ EncodingTask::EncodingResult EncodingTask::encode()
         return EncodingSystemError;
     }
 
-    pcmBuffer.resize(size * 2);
-    mp3Buffer.resize(MP3_SIZE * 2);
+    int frameSize = lame_get_framesize(lame_);
+    if (frameSize <= 0) {
+        fclose(outf);
+        lame_close(lame_);
+        lame_ = NULL;
+        return EncodingSystemError;
+    }
 
+    pcmBuffer.resize(frameSize * wave_.channelsNumber());
+    pcmBufferLeft.resize(frameSize);
+    pcmBufferRight.resize(frameSize);
+    mp3Buffer.resize(MP3_SIZE);
+
+    if (wave_.channelsNumber() == 1)
+        memset(&pcmBufferRight[0], 0, pcmBufferRight.size());
+
+    int wb = 0;
     int i = 0;
     while (true) {
-        size_t rb = 0;
+        size_t rs = 0;
         int numSamples = 0;
-        int wb = 0;
         bool isok = false;
 
         i++;
-#ifndef _WIN32
+#ifdef __linux__
         if (i % 10 == 0) {
             if (executor_ && executor_->checkCancelationSignal()) {
                 break;
@@ -75,65 +88,67 @@ EncodingTask::EncodingResult EncodingTask::encode()
         }
 #endif
 
-        isok = wave_.readSamples(
-                    reinterpret_cast<uint8_t*>(&pcmBuffer[0]),
-                    size, rb);
+        isok = wave_.unpackReadSamples(&pcmBuffer[0], frameSize * wave_.channelsNumber(), rs);
         if (!isok) {
             errorStr_ = "Failed to read PCM source";
             r = EncodingBadSource;
             break;
         }
 
-        if (rb > 0) {
-            numSamples = rb / 2;
+        if (!rs)
+            break;
 
-            if (wave_.channelsNumber() == 1) {
-                wb = lame_encode_buffer(
-                            lame_,
-                            reinterpret_cast<const short int*>(&pcmBuffer[0]),
-                            NULL,
-                            numSamples,
-                            reinterpret_cast<uint8_t*>(&mp3Buffer[0]),
-                            MP3_SIZE);
-            } else {
-                wb = lame_encode_buffer_interleaved(
-                            lame_,
-                            reinterpret_cast<short int*>(&pcmBuffer[0]),
-                            numSamples,
-                            reinterpret_cast<uint8_t*>(&mp3Buffer[0]),
-                            MP3_SIZE);
+        numSamples = rs / wave_.channelsNumber();
+        if (wave_.channelsNumber() == 2) {
+            int32_t *p = &pcmBuffer[0] + rs;
+            for (int j = numSamples; --j >= 0;) {
+                pcmBufferLeft[j] = *--p;
+                pcmBufferRight[j] = *--p;
             }
 
-            if (wb < 0) {
-                errorStr_ = "lame processing error: " + lameErrorCodeToStr(wb);
-                r = EncodingSystemError;
-                break;
-            } else if (wb > 0) {
-                size_t owb = fwrite(&mp3Buffer[0], 1, wb, outf);
-                if (owb != wb) {
-                    errorStr_ = "Failed to write into output file";
-                    r = EncodingBadDestination;
-                    break;
-                }
+        } else {
+            int32_t *p = &pcmBuffer[0] + rs;
+            for (int j = numSamples; --j >= 0;) {
+                pcmBufferLeft[j] = *--p;
             }
         }
 
-        if (rb < size) {
-            wb = lame_encode_flush(
-                        lame_,
-                        reinterpret_cast<uint8_t*>(&mp3Buffer[0]),
-                        MP3_SIZE);
-            if (wb < 0) {
-                errorStr_ = "lame processing error: " + lameErrorCodeToStr(wb);
-                r = EncodingSystemError;
-            } else if (wb > 0) {
-                size_t owb = fwrite(&mp3Buffer[0], 1, wb, outf);
-                if (owb != wb) {
-                    errorStr_ = "Failed to write into output file";
-                    r = EncodingBadDestination;
-                }
-            }
+        wb = lame_encode_buffer_int(
+                    lame_,
+                    &pcmBufferLeft[0],
+                    &pcmBufferRight[0],
+                    numSamples,
+                    &mp3Buffer[0],
+                    MP3_SIZE);
+
+        if (wb < 0) {
+            errorStr_ = "lame processing error: " + lameErrorCodeToStr(wb);
+            r = EncodingSystemError;
             break;
+        } else if (wb > 0) {
+            size_t owb = fwrite(&mp3Buffer[0], 1, wb, outf);
+            if (owb != wb) {
+                errorStr_ = "Failed to write into output file";
+                r = EncodingBadDestination;
+                break;
+            }
+        }
+    }
+
+    if (r == EncodingSuccess) {
+        wb = lame_encode_flush(
+                    lame_,
+                    &mp3Buffer[0],
+                    MP3_SIZE);
+        if (wb < 0) {
+            errorStr_ = "lame processing error: " + lameErrorCodeToStr(wb);
+            r = EncodingSystemError;
+        } else if (wb > 0) {
+            size_t owb = fwrite(&mp3Buffer[0], 1, wb, outf);
+            if (owb != wb) {
+                errorStr_ = "Failed to write into output file";
+                r = EncodingBadDestination;
+            }
         }
     }
 
@@ -161,6 +176,8 @@ bool EncodingTask::initLame()
         return false;
     }
 
+    lame_set_findReplayGain(lame_, 1);
+    lame_set_num_samples(lame_, wave_.numSamples());
     lame_set_in_samplerate(lame_, wave_.samplesPerSec());
     lame_set_brate(lame_, wave_.avgBytesPerSec());
     if (wave_.channelsNumber() == 1) {
@@ -169,7 +186,7 @@ bool EncodingTask::initLame()
     } else {
         lame_set_num_channels(lame_, wave_.channelsNumber());
     }
-    lame_set_VBR(lame_, vbr_default);
+    //lame_set_VBR(lame_, vbr_mtrh);
     lame_set_quality(lame_, 2); // high quality
 
     if (lame_init_params(lame_) < 0) {

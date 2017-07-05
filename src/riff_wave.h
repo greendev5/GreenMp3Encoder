@@ -25,12 +25,14 @@ public:
     bool isValid() const;
 
     bool readSamples(uint8_t *dest, size_t size, size_t &rb);
+    bool unpackReadSamples(int *buffer, size_t count, size_t &rs);
     bool seekStart();
     void clear();
 
     short int channelsNumber() const;
     int samplesPerSec() const;
     int avgBytesPerSec() const;
+    int numSamples() const;
     size_t dataSize() const;
 
     inline std::string riffWavePath() const { return riffWavePath_; }

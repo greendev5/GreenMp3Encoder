@@ -42,8 +42,10 @@ public:
     std::string sourceFilePath() const;
 
 private:
+    static const int LAME_MAXALBUMART = 128 * 1024;
+
     static const int PCM_SIZE = 8192;
-    static const int MP3_SIZE = 8192;
+    static const int MP3_SIZE = 16384 + LAME_MAXALBUMART;
 
     EncodingTask(
             const RiffWave &wave,
