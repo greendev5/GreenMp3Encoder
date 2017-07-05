@@ -68,6 +68,8 @@ RiffWave &RiffWave::operator=(const RiffWave &other)
         memcpy(hi_, other.hi_, sizeof(RiffWaveHeaderInternal));
         riffWavePath_ = other.riffWavePath_;
     }
+
+    return *this;
 }
 
 bool RiffWave::readWave(const std::string &riffWavePath)

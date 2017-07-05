@@ -1,14 +1,19 @@
 #include "encoder_app.h"
 
-#include <sys/signalfd.h>
-#include <sys/epoll.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef __linux__
+#include <sys/signalfd.h>
+#include <sys/epoll.h>
 #include <unistd.h>
 #include <signal.h>
 #include <dirent.h>
 #include <error.h>
 #include <errno.h>
+#elif defined(_WIN32)
+#include <Windows.h>
+#endif
 #include <string.h>
 #include <stdio.h>
 #include <algorithm>
@@ -38,21 +43,6 @@ EncoderApp::~EncoderApp()
     delete threadPool_;
 }
 
-bool EncoderApp::setSignalMask()
-{
-    sigemptyset(&sigmask_);
-    sigaddset(&sigmask_, SIGTERM);
-    sigaddset(&sigmask_, SIGINT);
-
-    int r = sigprocmask(SIG_BLOCK, &sigmask_, 0);
-    if (r == -1) {
-        GMP3ENC_LOGGER_ERROR("sigprocmask failed: %s.", strerror(errno));
-        return false;
-    }
-
-    return true;
-}
-
 int EncoderApp::exec()
 {
     bool needLoop = false;
@@ -60,12 +50,14 @@ int EncoderApp::exec()
     if (!needLoop)
         return r;
 
+#ifdef __linux__
     // We must set up a signal mask before running of
     // worker threads.
     // In this case all workers will inherit the main
     // thread` signal mask.
     if (!setSignalMask())
         return -1;
+#endif
 
     if (!threadPool_->runThreads()) {
         GMP3ENC_LOGGER_ERROR("Thread pool error");
@@ -85,7 +77,8 @@ int EncoderApp::exec()
     return r;
 }
 
-int EncoderApp::eventLoop()
+#ifdef __linux__
+int EncoderApp::eventLoopEpoll()
 {
     const int gmp3enc_epoll_events_size = 10;
 
@@ -148,7 +141,75 @@ int EncoderApp::eventLoop()
     close(appsigfd);
     return 0;
 }
+#endif
 
+#ifdef _WIN32
+int EncoderApp::eventLoopWinApi()
+{
+    HANDLE hTimer = NULL;
+    hTimer = CreateWaitableTimer(NULL, FALSE, NULL);
+
+    SYSTEMTIME time;
+    GetSystemTime(&time);
+    time.wMilliseconds += inactiveTimeoutMs_ * 20;
+
+    FILETIME ftime;
+    SystemTimeToFileTime(&time, &ftime);
+
+    if(!SetWaitableTimer(
+                hTimer,
+                reinterpret_cast<LARGE_INTEGER*>(&ftime),
+                inactiveTimeoutMs_ * 20,
+                NULL,
+                NULL,
+                0))
+    {
+        GMP3ENC_LOGGER_ERROR("SetWaitableTimer failed");
+        return -1;
+    };
+
+    DWORD ret = WaitForSingleObject(hTimer, inactiveTimeoutMs_ * 20);
+    int i = 0;
+    while(ret == WAIT_OBJECT_0 || ret == WAIT_TIMEOUT) {
+        i++;
+        GMP3ENC_LOGGER_ERROR("Process... %d", i);
+    }
+
+    CancelWaitableTimer(hTimer);
+    CloseHandle(hTimer);
+
+    return 0;
+}
+#endif
+
+int EncoderApp::eventLoop()
+{
+#ifdef __linux__
+    return eventLoopEpoll();
+#elif defined(_WIN32)
+    return eventLoopWinApi();
+#endif
+    return -1;
+}
+
+#ifdef __linux__
+bool EncoderApp::setSignalMask()
+{
+    sigemptyset(&sigmask_);
+    sigaddset(&sigmask_, SIGTERM);
+    sigaddset(&sigmask_, SIGINT);
+
+    int r = sigprocmask(SIG_BLOCK, &sigmask_, 0);
+    if (r == -1) {
+        GMP3ENC_LOGGER_ERROR("sigprocmask failed: %s.", strerror(errno));
+        return false;
+    }
+
+    return true;
+}
+#endif
+
+#ifdef __linux__
 bool EncoderApp::readInterruptionSignal(int fd)
 {
     const int signals_max_size = 10;
@@ -169,6 +230,7 @@ bool EncoderApp::readInterruptionSignal(int fd)
 
     return false;
 }
+#endif
 
 bool EncoderApp::processThreadPoolEvents()
 {
@@ -318,6 +380,7 @@ int EncoderApp::parseCmdOpt(bool &needLoop)
 
 void EncoderApp::listDirectory(std::string &dir, std::list<std::string> &wavFiles)
 {
+#ifdef __linux__
     struct stat statbuf;
     std::string sep = dir[dir.length() - 1] == '/' ? "" : "/";
     DIR *dp = opendir(dir.c_str());
@@ -346,6 +409,7 @@ void EncoderApp::listDirectory(std::string &dir, std::list<std::string> &wavFile
 
         wavFiles.push_back(item);
     }
+#endif
 }
 
 std::string EncoderApp::generateOutFileName(std::string &inFileName)

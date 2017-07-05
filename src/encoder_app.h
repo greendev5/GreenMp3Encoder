@@ -1,7 +1,9 @@
 #ifndef GMP3ENC_ENCODER_APP_
 #define GMP3ENC_ENCODER_APP_
 
+#ifdef __linux__
 #include <signal.h>
+#endif
 #include "thread_pool.h"
 
 namespace GMp3Enc {
@@ -15,9 +17,16 @@ public:
     int exec();
 
 private:
+#ifdef __linux__
     bool setSignalMask();
-    int eventLoop();
     bool readInterruptionSignal(int fd);
+    int eventLoopEpoll();
+#elif defined(_WIN32)
+    int eventLoopWinApi();
+#endif
+
+    int eventLoop();
+
     bool processThreadPoolEvents();
     bool executeTasks();
 
@@ -39,7 +48,9 @@ private:
 
     ThreadPool *threadPool_;
     int inactiveTimeoutMs_;
+#ifdef __linux__
     sigset_t sigmask_;
+#endif
 };
 
 }

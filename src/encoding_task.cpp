@@ -3,7 +3,9 @@
 #include <vector>
 #include <lame/lame.h>
 
+#ifndef _WIN32
 #include "worker_thread.h"
+#endif
 
 using namespace GMp3Enc;
 
@@ -54,8 +56,8 @@ EncodingTask::EncodingResult EncodingTask::encode()
         return EncodingSystemError;
     }
 
-    pcmBuffer.reserve(size * 2);
-    mp3Buffer.reserve(MP3_SIZE * 2);
+    pcmBuffer.resize(size * 2);
+    mp3Buffer.resize(MP3_SIZE * 2);
 
     int i = 0;
     while (true) {
@@ -65,11 +67,13 @@ EncodingTask::EncodingResult EncodingTask::encode()
         bool isok = false;
 
         i++;
+#ifndef _WIN32
         if (i % 10 == 0) {
             if (executor_ && executor_->checkCancelationSignal()) {
                 break;
             }
         }
+#endif
 
         isok = wave_.readSamples(
                     reinterpret_cast<uint8_t*>(&pcmBuffer[0]),

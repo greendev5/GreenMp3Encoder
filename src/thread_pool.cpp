@@ -85,4 +85,5 @@ bool ThreadPool::executeAsyncTask(EncodingTask *task)
         return false;
 
     taskQueue_.send(task);
+    return true;
 }

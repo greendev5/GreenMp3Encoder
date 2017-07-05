@@ -115,7 +115,7 @@ class ThirdPartyBuildSystemLWin32(COMMON.ThirdPartyBuildSystemBase):
         with COMMON.build_tmp_folder_context(build_dir):
             self.exec_cmd('copy configMS.h config.h')
             
-            replacements = {'/opt:NOWIN98':''}
+            replacements = {'/opt:NOWIN98':'', '/MT': '/MD'}
             lines = []
             with open('Makefile.MSVC') as infile:
                 for line in infile:
@@ -144,6 +144,7 @@ class ThirdPartyBuildSystemLWin32(COMMON.ThirdPartyBuildSystemBase):
             target_include_dir = os.path.join(COMMON.TPS_INSTALL_DIR, 'include')
             target_lib_dir = os.path.join(COMMON.TPS_INSTALL_DIR, 'lib')
             self.exec_cmd('copy pthread.h %s' % target_include_dir)
+            self.exec_cmd('copy sched.h %s' % target_include_dir)
             self.exec_cmd('copy *.lib %s' % target_lib_dir)
             
 

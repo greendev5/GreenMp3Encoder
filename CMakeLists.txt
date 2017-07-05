@@ -26,14 +26,23 @@ set (GMP3ENC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/riff_wave.h)
 
 set (GMP3ENC_GCC_COMPILE_FLAGS
-    "-std=c++03 -g")
+    "-std=c++03")
 
 set (GMP3ENC_INCLUDE_DIRECTORIES
     ${CMAKE_BINARY_DIR}/substitutes
     ${GMP3ENC_SOURCE_DIR}/3rdparty/build/include)
 
-set (GMP3ENC_STATIC_DEPS_LIBS
-    ${GMP3ENC_SOURCE_DIR}/3rdparty/build/lib/libmp3lame.a)
+if (MSVC)
+    set (GMP3ENC_STATIC_DEPS_LIBS
+        ${GMP3ENC_SOURCE_DIR}/3rdparty/build/lib/libmp3lame-static.lib
+        ${GMP3ENC_SOURCE_DIR}/3rdparty/build/lib/pthreadVC2.lib)
+    add_definitions(-DPTW32_STATIC_LIB)
+else()
+    set (GMP3ENC_STATIC_DEPS_LIBS
+        ${GMP3ENC_SOURCE_DIR}/3rdparty/build/lib/libmp3lame.a)
+    set (GMP3ENC_SYSTEM_DEPS_LIBS
+        pthread)
+endif()
 
 set (CMAKE_CXX_FLAGS
     ${CMAKE_CXX_FLAGS} ${GMP3ENC_GCC_COMPILE_FLAGS})
@@ -41,4 +50,4 @@ set (CMAKE_CXX_FLAGS
 configure_file (${GMP3ENC_SOURCE_DIR}/substitutes/version_no.h.in ${CMAKE_BINARY_DIR}/substitutes/gmp3enc_version_no.h )
 include_directories (${GMP3ENC_INCLUDE_DIRECTORIES})
 add_executable (gmp3enc ${GMP3ENC_SOURCES} ${GMP3ENC_HEADERS})
-target_link_libraries (gmp3enc pthread ${GMP3ENC_STATIC_DEPS_LIBS})
+target_link_libraries (gmp3enc ${GMP3ENC_SYSTEM_DEPS_LIBS} ${GMP3ENC_STATIC_DEPS_LIBS})
