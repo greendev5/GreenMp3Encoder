@@ -13,7 +13,13 @@ TPS_SOURCES_DIR = os.path.join(BASE_DIR, 'sources')
 TPS_BUILD_TMP_DIR = os.path.join(BASE_DIR, 'build.tmp')
 TPS_INSTALL_DIR = os.path.join(BASE_DIR, 'build')
 
+# TPS_ for win32
+TPS_PROGRAM_FILES_X86 = os.path.join('c:\\', 'Program Files (x86)')
+TPS_VCHOME = os.path.join(TPS_PROGRAM_FILES_X86, 'Microsoft Visual Studio 12.0\VC')
+
+#
 LAME_SRC_DIST = os.path.join(TPS_SOURCES_DIR, 'lame-3.99.5.tar.gz')
+PTHREADS_W32_SRC_DIST = os.path.join(TPS_SOURCES_DIR, 'pthreads-w32-2-9-1-release.tar.gz')
 
 
 @contextlib.contextmanager
