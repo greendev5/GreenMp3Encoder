@@ -248,7 +248,16 @@ bool EncoderApp::processThreadPoolEvents()
                     *it);
         if (eit != inProgressTasks_.end())
             inProgressTasks_.erase(eit);
-        GMP3ENC_LOGGER_INFO("Completed %s", (*it)->sourceFilePath().c_str());
+
+        if ((*it)->result() == EncodingTask::EncodingSuccess) {
+            GMP3ENC_LOGGER_INFO("Completed %s", (*it)->sourceFilePath().c_str());
+        } else {
+            GMP3ENC_LOGGER_INFO(
+                        "Error during encoding %s. Error: %s",
+                        (*it)->sourceFilePath().c_str(),
+                        (*it)->errorStr().c_str());
+        }
+
         EncodingTask *t = *it;
         completedTasks_.push_back(t);
     }

@@ -18,11 +18,15 @@ EncodingTask::EncodingTask(
     , taskId_(taskId)
     , lame_(NULL)
     , executor_(NULL)
+    , taskBuffer_(NULL)
+    , r_(EncodingSuccess)
 {
 }
 
 EncodingTask::~EncodingTask()
 {
+    if (taskBuffer_)
+        delete[] taskBuffer_;
 }
 
 EncodingTask* EncodingTask::create(
@@ -38,43 +42,52 @@ EncodingTask* EncodingTask::create(
 
 EncodingTask::EncodingResult EncodingTask::encode()
 {
-    EncodingResult r = EncodingSuccess;
+    r_ = EncodingSuccess;
 
-    std::vector<int32_t> pcmBuffer;
-    std::vector<int32_t> pcmBufferLeft;
-    std::vector<int32_t> pcmBufferRight;
-    std::vector<uint8_t> mp3Buffer;
+    uint8_t* mp3Buffer = NULL;
+    int32_t* pcmBuffer = NULL;
+    int32_t* pcmBufferLeft = NULL;
+    int32_t* pcmBufferRight = NULL;
 
     FILE *outf = fopen(mp3Destination_.c_str(), "wb");
     if (!outf) {
         errorStr_ = "Could not open destination file";
-        return EncodingBadDestination;
+        r_ = EncodingBadDestination;
+        return r_;
     }
 
     if (!initLame()) {
         fclose(outf);
-        return EncodingSystemError;
+        r_ = EncodingSystemError;
+        return r_;
     }
 
     int frameSize = lame_get_framesize(lame_);
     if (frameSize <= 0) {
+        errorStr_ = "Bad lame frame size";
         fclose(outf);
         lame_close(lame_);
         lame_ = NULL;
-        return EncodingSystemError;
+        r_ = EncodingSystemError;
+        return r_;
+
+    } else if (frameSize > LAME_MAX_FRAME_SIZE) {
+        frameSize = LAME_MAX_FRAME_SIZE;
     }
 
-    pcmBuffer.resize(frameSize * wave_.channelsNumber());
-    if (wave_.channelsNumber() == 2) {
-        pcmBufferLeft.resize(frameSize);
-        pcmBufferRight.resize(frameSize);
+    if (!allocateBuffers(&mp3Buffer, &pcmBuffer, &pcmBufferLeft, &pcmBufferRight, frameSize)) {
+        errorStr_ = "Failed to allocate buffers";
+        fclose(outf);
+        lame_close(lame_);
+        lame_ = NULL;
+        r_ = EncodingSystemError;
+        return r_;
     }
-    mp3Buffer.resize(MP3_SIZE);
 
     int wb = 0;
     int i = 0;
     while (true) {
-        size_t rs = 0;
+        size_t readSamples = 0;
         int numSamples = 0;
         bool isok = false;
 
@@ -83,35 +96,35 @@ EncodingTask::EncodingResult EncodingTask::encode()
 
         i++;
 #ifdef __linux__
-//        if (i % 10 == 0) {
-//            if (executor_ && executor_->checkCancelationSignal()) {
-//                break;
-//            }
-//        }
+        if (i % 10 == 0) {
+            if (executor_ && executor_->checkCancelationSignal()) {
+                break;
+            }
+        }
 #endif
 
-        isok = wave_.unpackReadSamples(&pcmBuffer[0], frameSize * wave_.channelsNumber(), rs);
+        isok = wave_.unpackReadSamples(pcmBuffer, frameSize * wave_.channelsNumber(), readSamples);
         if (!isok) {
             errorStr_ = "Failed to read PCM source";
-            r = EncodingBadSource;
+            r_ = EncodingBadSource;
             break;
         }
 
-        if (!rs)
+        if (!readSamples)
             break;
 
-        numSamples = rs / wave_.channelsNumber();
+        numSamples = readSamples / wave_.channelsNumber();
         if (wave_.channelsNumber() == 2) {
-            int32_t *p = &pcmBuffer[0] + rs;
+            int32_t *p = pcmBuffer + readSamples;
             for (int j = numSamples; --j >= 0;) {
                 pcmBufferLeft[j] = *--p;
                 pcmBufferRight[j] = *--p;
             }
-            bufl = &pcmBufferLeft[0];
-            bufr = &pcmBufferRight[0];
+            bufl = pcmBufferLeft;
+            bufr = pcmBufferRight;
 
         } else {
-            bufl = &pcmBuffer[0];
+            bufl = pcmBuffer;
         }
 
         wb = lame_encode_buffer_int(
@@ -119,44 +132,45 @@ EncodingTask::EncodingResult EncodingTask::encode()
                     bufl,
                     bufr,
                     numSamples,
-                    &mp3Buffer[0],
+                    mp3Buffer,
                     MP3_SIZE);
 
         if (wb < 0) {
             errorStr_ = "lame processing error: " + lameErrorCodeToStr(wb);
-            r = EncodingSystemError;
+            r_ = EncodingSystemError;
             break;
         } else if (wb > 0) {
-            size_t owb = fwrite(&mp3Buffer[0], 1, wb, outf);
+            size_t owb = fwrite(mp3Buffer, 1, wb, outf);
             if (owb != wb) {
                 errorStr_ = "Failed to write into output file";
-                r = EncodingBadDestination;
+                r_ = EncodingBadDestination;
                 break;
             }
         }
     }
 
-    if (r == EncodingSuccess) {
+    if (r_ == EncodingSuccess) {
         wb = lame_encode_flush(
                     lame_,
-                    &mp3Buffer[0],
+                    mp3Buffer,
                     MP3_SIZE);
         if (wb < 0) {
             errorStr_ = "lame processing error: " + lameErrorCodeToStr(wb);
-            r = EncodingSystemError;
+            r_ = EncodingSystemError;
         } else if (wb > 0) {
-            size_t owb = fwrite(&mp3Buffer[0], 1, wb, outf);
+            size_t owb = fwrite(mp3Buffer, 1, wb, outf);
             if (owb != wb) {
                 errorStr_ = "Failed to write into output file";
-                r = EncodingBadDestination;
+                r_ = EncodingBadDestination;
             }
         }
     }
 
     fclose(outf);
     lame_close(lame_);
+    lame_ = NULL;
 
-    return r;
+    return r_;
 }
 
 void EncodingTask::setExecutor(WorkerThread *executor)
@@ -217,4 +231,43 @@ std::string EncodingTask::lameErrorCodeToStr(int r)
     }
 
     return std::string("unknown error");
+}
+
+bool EncodingTask::allocateBuffers(uint8_t **mp3Buffer, int32_t **pcmBuffer,
+        int32_t **pcmBufferLeft, int32_t **pcmBufferRight,
+        int frameSize)
+{
+    uint8_t *buf;
+    if (executor_) {
+
+        buf = executor_->internalBuffer();
+        if (!buf) {
+            return false;
+        }
+
+    } else {
+
+        try {
+            taskBuffer_ = new uint8_t[ENCODING_BUFFER_SIZE];
+        } catch(std::bad_alloc) {
+            taskBuffer_ = NULL;
+            return false;
+        }
+        buf = taskBuffer_;
+
+    }
+
+    *mp3Buffer = buf;
+
+    *pcmBuffer = reinterpret_cast<int32_t*>(
+                buf + MP3_SIZE);
+
+    *pcmBufferLeft = reinterpret_cast<int32_t*>(
+                buf + MP3_SIZE + (frameSize * wave_.channelsNumber()) * sizeof(int32_t));
+
+    *pcmBufferRight = reinterpret_cast<int32_t*>(
+                buf + MP3_SIZE + (frameSize * wave_.channelsNumber()) * sizeof(int32_t) +
+                frameSize * sizeof(int32_t));
+
+    return true;
 }

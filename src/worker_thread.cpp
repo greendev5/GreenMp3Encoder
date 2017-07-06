@@ -7,17 +7,31 @@ WorkerThread::WorkerThread(EncodingTaskQueue &taskQueue, EncodingResultQueue &re
     , resultQueue_(resultQueue)
     , isRunning_(false)
     , currentTask_(NULL)
+    , buffer_(NULL)
 {
 }
 
 WorkerThread::~WorkerThread()
 {
+    if (buffer_)
+        delete[] buffer_;
 }
 
 bool WorkerThread::start()
 {
     if (isRunning_)
         return false;
+
+    // Every thread has own buffer for performing encoding:
+    try {
+        buffer_ = new uint8_t[EncodingTask::ENCODING_BUFFER_SIZE];
+    } catch(std::bad_alloc &e) {
+        GMP3ENC_LOGGER_ERROR(
+                    "Failed to allocate internal buffer for thread. Size: %zu",
+                    EncodingTask::ENCODING_BUFFER_SIZE);
+        buffer_ = NULL;
+        return false;
+    }
 
     int r = pthread_mutex_init(&cancelMutex_, NULL);
     if (r)

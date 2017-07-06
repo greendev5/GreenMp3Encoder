@@ -1,6 +1,8 @@
 #ifndef GMP3ENC_WORKER_THREAD_
 #define GMP3ENC_WORKER_THREAD_
 
+#include <stdint.h>
+
 #include "encoding_task.h"
 #include "message_queue.h"
 
@@ -24,6 +26,8 @@ public:
 
     inline bool isRunning() const { return isRunning_; }
 
+    inline uint8_t* internalBuffer() { return buffer_; }
+
 private:
     WorkerThread& operator=(const WorkerThread&) {}
     void exec();
@@ -35,6 +39,7 @@ private:
     bool isRunning_;
     EncodingTask *currentTask_;
     pthread_mutex_t cancelMutex_;
+    uint8_t *buffer_;
 };
 
 }
