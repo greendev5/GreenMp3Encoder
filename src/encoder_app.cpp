@@ -41,6 +41,10 @@ EncoderApp::EncoderApp(int argc, char *argv[])
     numCpu = sysconf(_SC_NPROCESSORS_ONLN);
     if (numCpu > 100)
         numCpu = 4;
+#elif defined(_WIN32)
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    numCpu = sysinfo.dwNumberOfProcessors;
 #endif
 
     threadPool_ = new ThreadPool(numCpu);
@@ -159,37 +163,14 @@ int EncoderApp::eventLoopEpoll()
 #ifdef _WIN32
 int EncoderApp::eventLoopWinApi()
 {
-    HANDLE hTimer = NULL;
-    hTimer = CreateWaitableTimer(NULL, FALSE, NULL);
-
-    SYSTEMTIME time;
-    GetSystemTime(&time);
-    time.wMilliseconds += inactiveTimeoutMs_ * 20;
-
-    FILETIME ftime;
-    SystemTimeToFileTime(&time, &ftime);
-
-    if(!SetWaitableTimer(
-                hTimer,
-                reinterpret_cast<LARGE_INTEGER*>(&ftime),
-                inactiveTimeoutMs_ * 20,
-                NULL,
-                NULL,
-                0))
-    {
-        GMP3ENC_LOGGER_ERROR("SetWaitableTimer failed");
-        return -1;
-    };
-
-    DWORD ret = WaitForSingleObject(hTimer, inactiveTimeoutMs_ * 20);
-    int i = 0;
-    while(ret == WAIT_OBJECT_0 || ret == WAIT_TIMEOUT) {
-        i++;
-        GMP3ENC_LOGGER_ERROR("Process... %d", i);
+    while(true) {
+        Sleep(inactiveTimeoutMs_);
+        // Checking queue;
+        if (!processThreadPoolEvents()) {
+            GMP3ENC_LOGGER_INFO("All tasks completed. Exiting...");
+            break;
+        }
     }
-
-    CancelWaitableTimer(hTimer);
-    CloseHandle(hTimer);
 
     return 0;
 }
@@ -430,6 +411,21 @@ void EncoderApp::listDirectory(std::string &dir, std::list<std::string> &wavFile
             continue;
 
         wavFiles.push_back(item);
+    }
+#elif defined(_WIN32)
+    HANDLE hFind;
+    WIN32_FIND_DATA data;
+
+    std::string sep = dir[dir.length() - 1] == '/' ? "" : "/";
+    std::string pat = dir + sep + "*.wav";
+
+    hFind = FindFirstFile(pat.c_str(), &data);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            std::string item = dir + sep + std::string(data.cFileName);
+            wavFiles.push_back(item);
+        } while (FindNextFile(hFind, &data));
+        FindClose(hFind);
     }
 #endif
 }
