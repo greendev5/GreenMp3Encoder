@@ -1,6 +1,5 @@
 #include "encoder_app.h"
 
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifdef __linux__
@@ -35,12 +34,26 @@ EncoderApp::EncoderApp(int argc, char *argv[])
     // called program name.
     for (int i = 1; i < argc; i++)
         cmdOpts_.push_back(std::string(argv[i]));
-    threadPool_ = new ThreadPool(4);
+
+    // Detect cpu cores:
+    int numCpu = 4;
+#ifdef __linux__
+    numCpu = sysconf(_SC_NPROCESSORS_ONLN);
+    if (numCpu > 100)
+        numCpu = 4;
+#endif
+
+    threadPool_ = new ThreadPool(numCpu);
 }
 
 EncoderApp::~EncoderApp()
 {
     delete threadPool_;
+    std::list<EncodingTask*>::iterator it;
+    for (it = tasks_.begin(); it != tasks_.end(); ++it) {
+        EncodingTask *t = *it;
+        delete t;
+    }
 }
 
 int EncoderApp::exec()

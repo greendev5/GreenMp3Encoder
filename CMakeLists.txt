@@ -26,7 +26,7 @@ set (GMP3ENC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/riff_wave.h)
 
 set (GMP3ENC_GCC_COMPILE_FLAGS
-    "-std=c++03 -g")
+    "-std=c++03")
 
 set (GMP3ENC_INCLUDE_DIRECTORIES
     ${CMAKE_BINARY_DIR}/substitutes
