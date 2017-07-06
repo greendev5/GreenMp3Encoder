@@ -24,7 +24,6 @@ public:
     bool readWave(const std::string &riffWavePath);
     bool isValid() const;
 
-    bool readSamples(uint8_t *dest, size_t size, size_t &rb);
     bool unpackReadSamples(int *buffer, size_t count, size_t &rs);
     bool seekStart();
     void clear();

@@ -65,12 +65,11 @@ EncodingTask::EncodingResult EncodingTask::encode()
     }
 
     pcmBuffer.resize(frameSize * wave_.channelsNumber());
-    pcmBufferLeft.resize(frameSize);
-    pcmBufferRight.resize(frameSize);
+    if (wave_.channelsNumber() == 2) {
+        pcmBufferLeft.resize(frameSize);
+        pcmBufferRight.resize(frameSize);
+    }
     mp3Buffer.resize(MP3_SIZE);
-
-    if (wave_.channelsNumber() == 1)
-        memset(&pcmBufferRight[0], 0, pcmBufferRight.size());
 
     int wb = 0;
     int i = 0;
@@ -79,13 +78,16 @@ EncodingTask::EncodingResult EncodingTask::encode()
         int numSamples = 0;
         bool isok = false;
 
+        int *bufl = NULL;
+        int *bufr = NULL;
+
         i++;
 #ifdef __linux__
-        if (i % 10 == 0) {
-            if (executor_ && executor_->checkCancelationSignal()) {
-                break;
-            }
-        }
+//        if (i % 10 == 0) {
+//            if (executor_ && executor_->checkCancelationSignal()) {
+//                break;
+//            }
+//        }
 #endif
 
         isok = wave_.unpackReadSamples(&pcmBuffer[0], frameSize * wave_.channelsNumber(), rs);
@@ -105,18 +107,17 @@ EncodingTask::EncodingResult EncodingTask::encode()
                 pcmBufferLeft[j] = *--p;
                 pcmBufferRight[j] = *--p;
             }
+            bufl = &pcmBufferLeft[0];
+            bufr = &pcmBufferRight[0];
 
         } else {
-            int32_t *p = &pcmBuffer[0] + rs;
-            for (int j = numSamples; --j >= 0;) {
-                pcmBufferLeft[j] = *--p;
-            }
+            bufl = &pcmBuffer[0];
         }
 
         wb = lame_encode_buffer_int(
                     lame_,
-                    &pcmBufferLeft[0],
-                    &pcmBufferRight[0],
+                    bufl,
+                    bufr,
                     numSamples,
                     &mp3Buffer[0],
                     MP3_SIZE);

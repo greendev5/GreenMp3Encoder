@@ -236,6 +236,11 @@ bool RiffWave::readWave(const std::string &riffWavePath)
         return false;
     }
 
+    if (channels != 1 && channels != 2) {
+        clear();
+        return false;
+    }
+
     if (bitsPerSample != 8  && bitsPerSample != 16 &&
         bitsPerSample != 24 && bitsPerSample != 32) {
         clear();
@@ -264,32 +269,6 @@ bool RiffWave::readWave(const std::string &riffWavePath)
 bool RiffWave::isValid() const
 {
     return hi_ != NULL;
-}
-
-bool RiffWave::readSamples(uint8_t *dest, size_t size, size_t &rb)
-{
-    size_t dd = sizeof(RiffWaveHeaderInternal);
-
-    if (!isValid())
-        return false;
-
-    if (!f_) {
-        if (!seekStart())
-            return false;
-    }
-
-    if (feof(f_)) {
-        rb = 0;
-        return true;
-    }
-
-    rb = fread(dest, 1, size, f_);
-    if (rb != size) {
-        if (ferror(f_))
-            return false;
-    }
-
-    return true;
 }
 
 bool RiffWave::unpackReadSamples(int *buffer, size_t count, size_t &rs)
@@ -391,21 +370,21 @@ short int RiffWave::channelsNumber() const
 {
     if (!hi_)
         return 0;
-    hi_->channels;
+    return hi_->channels;
 }
 
 int RiffWave::samplesPerSec() const
 {
     if (!hi_)
         return 0;
-    hi_->samplesPerSec;
+    return hi_->samplesPerSec;
 }
 
 int RiffWave::avgBytesPerSec() const
 {
     if (!hi_)
         return 0;
-    hi_->avgBytesPerSec;
+    return hi_->avgBytesPerSec;
 }
 
 int RiffWave::numSamples() const
